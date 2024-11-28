@@ -11,7 +11,17 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { useToast } from "@/components/ui/use-toast";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+import { useToast } from "@/hooks/use-toast";
 import MenuItemDialog from "@/components/admin/MenuItemDialog";
 import { formatCurrency } from "@/lib/utils";
 import AdminLayout from "@/components/admin/AdminLayout";
@@ -19,6 +29,7 @@ import AdminLayout from "@/components/admin/AdminLayout";
 const AdminMenu = () => {
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [selectedItem, setSelectedItem] = useState<any>(null);
+  const [itemToDelete, setItemToDelete] = useState<string | null>(null);
   const { toast } = useToast();
   const queryClient = useQueryClient();
 
@@ -43,7 +54,11 @@ const AdminMenu = () => {
 
   const deleteMutation = useMutation({
     mutationFn: async (id: string) => {
-      const { error } = await supabase.from("menu_items").delete().eq("id", id);
+      console.log("Deleting menu item:", id);
+      const { error } = await supabase
+        .from("menu_items")
+        .delete()
+        .eq("id", id);
       if (error) throw error;
     },
     onSuccess: () => {
@@ -52,14 +67,16 @@ const AdminMenu = () => {
         title: "Menu item deleted",
         description: "The menu item has been successfully deleted.",
       });
+      setItemToDelete(null);
     },
     onError: (error) => {
+      console.error("Error deleting menu item:", error);
       toast({
         title: "Error",
         description: "Failed to delete menu item. Please try again.",
         variant: "destructive",
       });
-      console.error("Error deleting menu item:", error);
+      setItemToDelete(null);
     },
   });
 
@@ -69,9 +86,15 @@ const AdminMenu = () => {
     setIsDialogOpen(true);
   };
 
-  const handleDelete = async (id: string) => {
-    if (window.confirm("Are you sure you want to delete this menu item?")) {
-      deleteMutation.mutate(id);
+  const handleDelete = (id: string) => {
+    console.log("Opening delete confirmation for item:", id);
+    setItemToDelete(id);
+  };
+
+  const confirmDelete = () => {
+    if (itemToDelete) {
+      console.log("Confirming deactivation of item:", itemToDelete);
+      deleteMutation.mutate(itemToDelete);
     }
   };
 
@@ -125,7 +148,7 @@ const AdminMenu = () => {
                       <span className="text-red-600">No</span>
                     )}
                   </TableCell>
-                  <TableCell className="text-right">
+                  <TableCell className="text-right space-x-2">
                     <Button
                       variant="ghost"
                       size="icon"
@@ -152,6 +175,23 @@ const AdminMenu = () => {
           onOpenChange={setIsDialogOpen}
           item={selectedItem}
         />
+
+        <AlertDialog open={!!itemToDelete} onOpenChange={() => setItemToDelete(null)}>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>Are you sure?</AlertDialogTitle>
+              <AlertDialogDescription>
+                This will permanently delete this menu item. Order history will be preserved.
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel>Cancel</AlertDialogCancel>
+              <AlertDialogAction onClick={confirmDelete} className="bg-red-600 hover:bg-red-700">
+                Delete
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
       </div>
     </AdminLayout>
   );
