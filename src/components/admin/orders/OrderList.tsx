@@ -20,8 +20,23 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { toast } from "sonner";
+import type { Tables } from "@/integrations/supabase/types";
 
 const ORDER_STATUSES = ["pending", "preparing", "ready", "completed", "paid"] as const;
+
+type OrderWithItems = {
+  id: string;
+  table_number: number;
+  status: string;
+  total_amount: number;
+  created_at: string;
+  order_items: Array<{
+    id: string;
+    quantity: number;
+    menu_item: Tables<"menu_items"> | null;
+    menu_item_name?: string;
+  }>;
+};
 
 export const OrderList = () => {
   const queryClient = useQueryClient();
@@ -29,7 +44,7 @@ export const OrderList = () => {
   const { data: orders, isLoading } = useQuery({
     queryKey: ["admin-orders"],
     queryFn: async () => {
-      console.log("Fetching orders...");
+      console.log("Fetching orders with menu items...");
       const { data, error } = await supabase
         .from("orders")
         .select(`
@@ -37,25 +52,33 @@ export const OrderList = () => {
           order_items (
             *,
             menu_item: menu_items (
-              name
+              name,
+              deleted_at
             )
           )
         `)
         .order("created_at", { ascending: false });
 
-      if (error) {
-        console.error("Error fetching orders:", error);
-        throw error;
-      }
+      if (error) throw error;
       
-      console.log("Fetched orders:", data);
-      return data;
+      // Transform the data to handle archived items
+      const transformedData = (data as OrderWithItems[]).map(order => ({
+        ...order,
+        order_items: order.order_items.map(item => ({
+          ...item,
+          menu_item_name: item.menu_item?.deleted_at 
+            ? `${item.menu_item.name} (Archived)`
+            : item.menu_item?.name || '(Unknown item)'
+        }))
+      }));
+      
+      console.log("Transformed order data:", transformedData);
+      return transformedData;
     },
   });
 
   const updateOrderStatus = useMutation({
     mutationFn: async ({ orderId, status }: { orderId: string; status: string }) => {
-      console.log("Updating order status:", orderId, status);
       const { data: order, error: orderError } = await supabase
         .from("orders")
         .select("table_number")
@@ -64,7 +87,6 @@ export const OrderList = () => {
 
       if (orderError) throw orderError;
 
-      // First update the order status
       const { error: updateOrderError } = await supabase
         .from("orders")
         .update({ status })
@@ -72,9 +94,7 @@ export const OrderList = () => {
 
       if (updateOrderError) throw updateOrderError;
 
-      // If the order is being marked as paid, update the table status to available
       if (status === "paid") {
-        console.log("Updating table status for table:", order.table_number);
         const { error: tableError } = await supabase
           .from("tables")
           .update({ status: "available" })
@@ -85,11 +105,10 @@ export const OrderList = () => {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["admin-orders"] });
-      queryClient.invalidateQueries({ queryKey: ["tables"] }); // Add this line to refresh tables data
+      queryClient.invalidateQueries({ queryKey: ["tables"] });
       toast.success("Status updated successfully");
     },
-    onError: (error) => {
-      console.error("Error updating order status:", error);
+    onError: () => {
       toast.error("Failed to update status");
     },
   });
@@ -143,7 +162,7 @@ export const OrderList = () => {
                 <ul className="list-disc list-inside">
                   {order.order_items?.map((item) => (
                     <li key={item.id}>
-                      {item.quantity}x {item.menu_item?.name}
+                      {item.quantity}x {item.menu_item_name}
                     </li>
                   ))}
                 </ul>
